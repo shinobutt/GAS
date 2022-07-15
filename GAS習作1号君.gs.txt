@@ -63,7 +63,7 @@ function doPost(e) {
    
   // スプレッドシートへ保存
   var response = e.postData.getDataAsString();
-  var spreadsheetId = "1zQx3UWApK_CPrJlpupcUzP4Xk9fELzr5NJUpQdyRNd0";
+  var spreadsheetId = "******"; //スプシID
   var sheetName = "log";
   var spreadsheet = SpreadsheetApp.openById(spreadsheetId);
   var sheet = spreadsheet.getSheetByName(sheetName);
