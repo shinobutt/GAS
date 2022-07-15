@@ -1,0 +1,118 @@
+//LINEのアクセストークン
+var channel_access_token = "MZarofUDBU93oBQfCbBsPSjLgjCHgLE0tgMGnzdzOVX7rboOrpD6/cbJnVQLo2h9zOkiS8TGEPDSEc+Tc0PffI5GZTy4EX2v3sM7iP4ez+KizkyakxUJsD69xU/nzjCK8FfoXHm2m/zGhdkVn5xIwAdB04t89/1O/w1cDnyilFU=";
+var headers = {
+   "Content-Type": "application/json; charset=UTF-8",
+   "Authorization": "Bearer " + channel_access_token
+};
+
+//返信する
+function sendLineMessageFromReplyToken(token, replyText) {
+ var url = "https://api.line.me/v2/bot/message/reply";
+ var headers = {
+   "Content-Type": "application/json; charset=UTF-8",
+   "Authorization": "Bearer " + channel_access_token
+ };
+ var postData = {
+   "replyToken": token,
+   "messages": [{
+     "type": "text",
+     "text": replyText
+   }]
+ };
+ var options = {
+   "method": "POST",
+   "headers": headers,
+   "payload": JSON.stringify(postData)
+ };
+ return UrlFetchApp.fetch(url, options);
+}
+
+//指定のuserIdにメッセージを送る
+function sendLineMessageFromUserId(userId, text) {
+ var url = "https://api.line.me/v2/bot/message/push";
+ var postData = {
+   "to": userId,
+   "messages": [{
+     "type": "text",
+     "text": text
+   }]
+ };
+ var options = {
+   "method": "POST",
+   "headers": headers,
+   "payload": JSON.stringify(postData)
+ };
+ return UrlFetchApp.fetch(url, options);
+}
+
+//LineのAPI周りここまでもうなんもわからん
+
+
+
+
+
+//Lineから投げ込まれた投稿を分析するターン
+function doPost(e) {
+  var replyToken, replyText, userId;
+  // 投稿されたメッセージを取得
+  var webhookData = JSON.parse(e.postData.contents).events[0];
+  var message = webhookData.message.text.split("\n");
+  var userMessage = webhookData.message.text;
+  userId = webhookData.source.userId;
+  replyToken = webhookData.replyToken;
+   
+  // スプレッドシートへ保存
+  var response = e.postData.getDataAsString();
+  var spreadsheetId = "1zQx3UWApK_CPrJlpupcUzP4Xk9fELzr5NJUpQdyRNd0";
+  var sheetName = "log";
+  var spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+  var sheet = spreadsheet.getSheetByName(sheetName);
+  var processing = message[0];
+  var kingaku = message[1];
+  var doushita = message[2];
+  var row = getLastRow();
+ 
+  // 空白・タブ・改行で区切り配列に変換  
+  var arr = userMessage.split(/\s/);
+ 
+  // 配列の先頭に日時を代入
+  arr.unshift(userId);
+  arr.unshift(new Date());
+
+  // セルの最下部に配列を転記
+  sheet.appendRow(arr);
+
+  // =======================================
+/*
+  switch (doushita) {
+    case '借りた':
+      replyText = '登録しました。';
+//      replyText = setPlan(doushita, row);
+      break;
+    case '貸した':
+      replyText = '登録しました。';
+//      replyText = setPlan(doushita, row);
+      break;
+    case '返した':
+      replyText = '登録しました。';
+//      replyText = setPlan(doushita, row);
+      break;
+    default:
+      replyText = "人名\n金額(数字のみ)\n借りた・貸した・返した\n\nの形式で入力してください。";
+      break;
+  }
+*/
+  return sendLineMessageFromReplyToken(replyToken, replyText); 
+}
+
+/*
+function setFromRowAndLine(val, row, line) {
+ sheet.getRange(row + 1, line + 1).setValue(val);
+}
+//登録完了通知
+function setPlan(doushita, row) {
+  setFromRowAndLine(doushita, row, 1);
+  return '登録しました。';
+}
+*/
+
