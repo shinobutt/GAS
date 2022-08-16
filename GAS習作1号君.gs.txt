@@ -1,5 +1,5 @@
 //LINEのアクセストークン
-var channel_access_token = "MZarofUDBU93oBQfCbBsPSjLgjCHgLE0tgMGnzdzOVX7rboOrpD6/cbJnVQLo2h9zOkiS8TGEPDSEc+Tc0PffI5GZTy4EX2v3sM7iP4ez+KizkyakxUJsD69xU/nzjCK8FfoXHm2m/zGhdkVn5xIwAdB04t89/1O/w1cDnyilFU=";
+var channel_access_token = "******";
 var headers = {
    "Content-Type": "application/json; charset=UTF-8",
    "Authorization": "Bearer " + channel_access_token
@@ -52,67 +52,185 @@ function sendLineMessageFromUserId(userId, text) {
 
 
 //Lineから投げ込まれた投稿を分析するターン
-function doPost(e) {
-  var replyToken, replyText, userId;
-  // 投稿されたメッセージを取得
-  var webhookData = JSON.parse(e.postData.contents).events[0];
-  var message = webhookData.message.text.split("\n");
-  var userMessage = webhookData.message.text;
-  userId = webhookData.source.userId;
-  replyToken = webhookData.replyToken;
-   
-  // スプレッドシートへ保存
-  var response = e.postData.getDataAsString();
-  var spreadsheetId = "******"; //スプシID
-  var sheetName = "log";
-  var spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-  var sheet = spreadsheet.getSheetByName(sheetName);
-  var processing = message[0];
-  var kingaku = message[1];
-  var doushita = message[2];
-  var row = getLastRow();
- 
-  // 空白・タブ・改行で区切り配列に変換  
-  var arr = userMessage.split(/\s/);
- 
-  // 配列の先頭に日時を代入
-  arr.unshift(userId);
-  arr.unshift(new Date());
-
-  // セルの最下部に配列を転記
-  sheet.appendRow(arr);
-
-  // =======================================
-/*
-  switch (doushita) {
-    case '借りた':
-      replyText = '登録しました。';
-//      replyText = setPlan(doushita, row);
-      break;
-    case '貸した':
-      replyText = '登録しました。';
-//      replyText = setPlan(doushita, row);
-      break;
-    case '返した':
-      replyText = '登録しました。';
-//      replyText = setPlan(doushita, row);
-      break;
-    default:
-      replyText = "人名\n金額(数字のみ)\n借りた・貸した・返した\n\nの形式で入力してください。";
-      break;
-  }
-*/
-  return sendLineMessageFromReplyToken(replyToken, replyText); 
+//８桁日付のフォーマット
+function formatDateForDisplay (date){
+  var year = date.substr(0,4);
+  var month = date.substr(4,2);
+  var day = date.substr(6,2);
+  var result = year + "/" + month + "/" + day;
+  return result;
 }
 
-/*
+//Date型日付のフォーマット
+function formatDate (date, format) {
+  format = format.replace(/yyyy/g, date.getFullYear());
+  format = format.replace(/MM/g, ('0' + (date.getMonth() + 1)).slice(-2));
+  format = format.replace(/dd/g, ('0' + date.getDate()).slice(-2));
+  return format;
+};
+
+//日付をシートに記載する
+function setDate(date, plan, row) {
+  if (isNaN(date) || String(date).length != 8) {
+    return '日付が正しくありません';
+  }
+  setFromRowAndLine(date, row, 0);
+  return setPlan(plan, row);
+}
+
+//予定をシートに記載する
+function setPlan(plan, row) {
+  setFromRowAndLine(plan, row, 1);
+  return '予定を登録しました。';
+}
+
+//トリガー起動で当日と翌日の予定を返す
+function getTodayAndNextDayMessage() {
+  var date = new Date();
+  var userId = '******'; //LINEのユーザID
+  //今日の予定を取得
+  var remindText = getDatePlan(date);
+  //明日の予定を取得
+  date.setDate(date.getDate() + 1);
+  remindText += "\n" + getDatePlan(date);
+  return sendLineMessageFromUserId(userId, remindText);
+}
+
+//指定日の予定を返す
+function getDatePlan(date) {
+  if(date instanceof Date) {
+    date = formatDate(date, 'yyyyMMdd');
+  }
+  var day = formatDateForDisplay(date);
+  var remindText = day + "\n";
+  var plans = searchPlans(date);
+  for(var i = 0; i < plans.length; i++) {
+    remindText += getFromRowAndLine('webhook', plans[i]);
+    remindText += "\n";
+  }
+  remindText = remindText.slice(0,-1);
+  if(remindText.length === 10) {
+    remindText += "\n明日は予定がありません。";
+  }
+  return remindText;
+}
+
+//受け取ったメッセージに対して返信する
+function doPost(e) {
+  var webhookData = JSON.parse(e.postData.contents).events[0];
+  var message, replyToken, replyText, userId;
+  message = webhookData.message.text.split("\n");
+  replyToken = webhookData.replyToken;
+  userId = webhookData.source.userId;
+  var processing = message[0];
+  var planDate = message[1];
+  var plan = message[2];
+  var row = getLastRow();
+  
+  switch (processing) {
+    case '登録':
+      replyText = setDate(planDate, plan, row);
+      break;
+    case 'キャンセル':
+      replyText = cancel(planDate, plan);
+      break;
+    case '確認':
+      replyText = planDate === undefined ? getDatePlan(new Date()) : getDatePlan(planDate);
+      break;
+    case 'test':
+      replyText = testSheet();
+      break;
+    default:
+      replyText = "予定の登録・キャンセルができます。\n\n登録\n20200101\n予定\n\nの形式で入力してください。";
+      break;
+  }
+  return sendLineMessageFromReplyToken(replyToken, replyText);
+}
+
+//予定を削除する
+function cancel(date,plan) {
+ deleteRowOfDateAndPlan(date, plan);
+ return '予定の登録をキャンセルしました。'
+}
+
+//トリガーをセットする
+function setTrigger(){
+  const time = new Date();
+  time.setHours(7);
+  time.setMinutes(00);
+  ScriptApp.newTrigger('getTodayAndNextDayMessage').timeBased().at(time).create();
+  time.setHours(12);
+  ScriptApp.newTrigger('getTodayAndNextDayMessage').timeBased().at(time).create();
+  time.setHours(19);
+  ScriptApp.newTrigger('getTodayAndNextDayMessage').timeBased().at(time).create();
+  time.setDate(time.getDate() - 1);
+  //前日の予定を削除する
+  deleteRowOfDate(formatDate(time, 'yyyyMMdd'));
+}
+
+//トリガーを削除する
+function delTrigger() { 
+  const triggers = ScriptApp.getProjectTriggers();
+  for(const trigger of triggers){
+    if(trigger.getHandlerFunction() == "getTodayAndNextDayMessage"){
+      ScriptApp.deleteTrigger(trigger);
+    }
+  }
+}
+
+
+
+
+
+
+//スプレッドシート
+var spreadsheet = SpreadsheetApp.openById("******"); //スプシのID
+var sheet = spreadsheet.getSheetByName('log');
+
+//受け取った日付の予定が記載されている行を返す
+function searchPlans(date) {
+ var data = sheet.getDataRange().getValues();
+ var plans = [];
+ for (var i = 0; i < data.length; i++) {
+   if (data[i][0] == date) {
+     plans.push(i + 1);
+   }
+ }
+  return plans;
+}
+
+//列を指定してデータを取得する
+function getFromRowAndLine(sheetName, row) {
+ var data = sheet.getDataRange().getValues();
+ return data[row - 1][1];
+}
+
+//列を指定してデータを書き込む
 function setFromRowAndLine(val, row, line) {
  sheet.getRange(row + 1, line + 1).setValue(val);
 }
-//登録完了通知
-function setPlan(doushita, row) {
-  setFromRowAndLine(doushita, row, 1);
-  return '登録しました。';
+
+function getLastRow() {
+  return sheet.getLastRow();
 }
-*/
+
+//日付と予定から行を削除する
+function deleteRowOfDateAndPlan(date, plan) {
+  var lastRow = getLastRow();
+  for (var i = 1; i <= lastRow; i++) {
+    if (sheet.getRange(i, 1).getValue() == date && sheet.getRange(i, 2).getValue() == plan) {
+      sheet.deleteRows(i);
+    }
+  }
+}
+
+//指定の日付の行を削除する
+function deleteRowOfDate(date) {
+  var lastRow = sheet.getDataRange().getLastRow();
+  for (var i = 1; i <= lastRow; i++) {
+    if (sheet.getRange(i, 1).getValue() == date) {
+      sheet.deleteRows(i);
+    }
+  }
+}
 
